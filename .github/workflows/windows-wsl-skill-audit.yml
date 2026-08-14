@@ -1,0 +1,69 @@
+name: Windows/WSL skill audit
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - '.github/workflows/windows-wsl-skill-audit.yml'
+      - 'docs/en/09_DOCTOR.md'
+      - 'docs/en/15_CODEX_PROVIDER_SETUP.md'
+      - 'docs/en/32_WINDOWS_WSL2_DEPLOYMENT_GUIDE.md'
+      - 'scripts/audits/audit_windows_wsl_skill.py'
+      - 'skills/deepscientist-windows-wsl-setup/**'
+      - 'tests/test_windows_wsl_skill.py'
+  pull_request:
+    paths:
+      - '.github/workflows/windows-wsl-skill-audit.yml'
+      - 'docs/en/09_DOCTOR.md'
+      - 'docs/en/15_CODEX_PROVIDER_SETUP.md'
+      - 'docs/en/32_WINDOWS_WSL2_DEPLOYMENT_GUIDE.md'
+      - 'scripts/audits/audit_windows_wsl_skill.py'
+      - 'skills/deepscientist-windows-wsl-setup/**'
+      - 'tests/test_windows_wsl_skill.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-audit:
+    name: Audit Windows/WSL skill on Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js (for future repository tooling parity)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Ensure PowerShell parser availability
+        uses: PSModule/Install-PowerShell@v1
+        with:
+          Version: 7.5.0
+
+      - name: Compile auditor
+        run: python -m py_compile scripts/audits/audit_windows_wsl_skill.py
+
+      - name: Run deterministic skill audit
+        run: python scripts/audits/audit_windows_wsl_skill.py
+
+      - name: Parse PowerShell helper
+        shell: pwsh
+        run: |
+          $null = [scriptblock]::Create((Get-Content -Raw "skills/deepscientist-windows-wsl-setup/scripts/find-wsl-proxy.ps1"))
+          "PowerShell helper parse OK"
+
+      - name: Run focused tests
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          python -m pytest tests/test_windows_wsl_skill.py -q
