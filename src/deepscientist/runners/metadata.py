@@ -15,6 +15,15 @@ class RunnerMetadata:
 
 
 _RUNNER_METADATA: dict[str, RunnerMetadata] = {
+    "omp": RunnerMetadata(
+        name="omp",
+        label="Oh My Pi (pi-coding-agent)",
+        default_binary="omp",
+        default_config_dir="~/.omp",
+        quest_dotdir=".omp",
+        supports_reasoning_effort=True,
+        status_note="Default runner on Linux. Install with `curl -fsSL https://omp.sh/install | sh` or `bun install -g @oh-my-pi/pi-coding-agent`.",
+    ),
     "codex": RunnerMetadata(
         name="codex",
         label="Codex",

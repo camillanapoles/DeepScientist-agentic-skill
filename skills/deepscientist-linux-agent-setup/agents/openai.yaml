@@ -1,0 +1,7 @@
+interface:
+  display_name: "DeepScientist Linux Agent Setup"
+  short_description: "Install DeepScientist on native Linux with OMP as the default runner"
+  default_prompt: "Use $deepscientist-linux-agent-setup to install or repair DeepScientist on this Linux machine until ds doctor passes and the Web UI opens."
+
+policy:
+  allow_implicit_invocation: true

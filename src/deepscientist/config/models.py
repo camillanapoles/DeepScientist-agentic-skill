@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,6 +10,19 @@ CONFIG_NAMES = ("config", "runners", "connectors", "plugins", "mcp_servers")
 REQUIRED_CONFIG_NAMES = ("config", "runners", "connectors")
 OPTIONAL_CONFIG_NAMES = ("plugins", "mcp_servers")
 SYSTEM_CONNECTOR_NAMES = ("qq", "weixin", "telegram", "discord", "slack", "feishu", "whatsapp", "lingzhu")
+
+
+def platform_default_runner() -> str:
+    """Return the default runner for the host platform.
+
+    OMP (oh-my-pi / pi-coding-agent) is the default runner on Linux and
+    macOS; Codex remains the default on native Windows where the WSL
+    path is not being used.
+    """
+    system = platform.system().lower()
+    if system == "windows":
+        return "codex"
+    return "omp"
 
 
 @dataclass(frozen=True)
@@ -30,6 +44,10 @@ def default_system_enabled_connectors() -> dict[str, bool]:
 def default_config(home: Path) -> dict:
     return {
         "home": str(home),
+        # OMP is the recommended default on Linux for the agentic setup skill,
+        # but the global config default stays "codex" for backward compatibility
+        # with existing quests and the large established test baseline.
+        # The orchestration router and the Linux setup skill select OMP directly.
         "default_runner": "codex",
         "default_locale": "zh-CN",
         "daemon": {
@@ -120,11 +138,29 @@ def default_config(home: Path) -> dict:
 
 
 def default_runners() -> dict:
+    omp = get_runner_metadata("omp")
     codex = get_runner_metadata("codex")
     claude = get_runner_metadata("claude")
     kimi = get_runner_metadata("kimi")
     opencode = get_runner_metadata("opencode")
     return {
+        "omp": {
+            "enabled": True,
+            "binary": omp.default_binary,
+            "config_dir": omp.default_config_dir,
+            "profile": "",
+            "model": "inherit",
+            "model_reasoning_effort": "high",
+            "approval_policy": "never",
+            "sandbox_mode": "danger-full-access",
+            "retry_on_failure": True,
+            "retry_max_attempts": 7,
+            "retry_initial_backoff_sec": 10.0,
+            "retry_backoff_multiplier": 6.0,
+            "retry_max_backoff_sec": 1800.0,
+            "mcp_tool_timeout_sec": 172800,
+            "env": {},
+        },
         "codex": {
             "enabled": True,
             "binary": codex.default_binary,

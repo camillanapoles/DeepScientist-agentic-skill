@@ -8,6 +8,7 @@ __all__ = [
     "ClaudeRunner",
     "CodexRunner",
     "KimiRunner",
+    "OmpRunner",
     "OpenCodeRunner",
     "RunRequest",
     "RunResult",
@@ -21,6 +22,10 @@ __all__ = [
 
 
 def __getattr__(name: str):
+    if name == "OmpRunner":
+        from .omp import OmpRunner
+
+        return OmpRunner
     if name == "CodexRunner":
         from .codex import CodexRunner
 

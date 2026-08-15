@@ -1,0 +1,82 @@
+name: Orchestration & OMP runner (Pydantic + Instructor)
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - '.github/workflows/orchestration.yml'
+      - 'src/deepscientist/orchestration/**'
+      - 'src/deepscientist/runners/omp.py'
+      - 'src/deepscientist/runners/metadata.py'
+      - 'src/deepscientist/runners/builtins.py'
+      - 'src/deepscientist/config/models.py'
+      - 'skills/deepscientist-linux-agent-setup/**'
+      - 'scripts/audits/audit_linux_agent_skill.py'
+      - 'tests/orchestration/**'
+      - 'pyproject.toml'
+  pull_request:
+    paths:
+      - '.github/workflows/orchestration.yml'
+      - 'src/deepscientist/orchestration/**'
+      - 'src/deepscientist/runners/omp.py'
+      - 'src/deepscientist/runners/metadata.py'
+      - 'src/deepscientist/runners/builtins.py'
+      - 'src/deepscientist/config/models.py'
+      - 'skills/deepscientist-linux-agent-setup/**'
+      - 'scripts/audits/audit_linux_agent_skill.py'
+      - 'tests/orchestration/**'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  orchestration-tests:
+    name: Deterministic engine + Pydantic schemas + Instructor + OMP + Linux skill
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies (incl. pydantic + instructor)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest
+
+      - name: Compile orchestration and runner modules
+        run: |
+          python -m py_compile src/deepscientist/orchestration/*.py
+          python -m py_compile src/deepscientist/runners/omp.py
+
+      - name: Assert no text-templating engine (Jinja2 etc.) in skill or src
+        run: |
+          if grep -rniE "jinja|mako|cheetah|\.j2\b" \
+               src/deepscientist/orchestration \
+               skills/deepscientist-linux-agent-setup \
+               --include="*.py" --include="*.md" 2>/dev/null; then
+            echo "Found forbidden text-templating reference" >&2
+            exit 1
+          fi
+          if find skills/deepscientist-linux-agent-setup -name "*.j2" -o -name "*.jinja" | grep -q .; then
+            echo "Found forbidden template file" >&2
+            exit 1
+          fi
+          echo "No text templating engine found — Pydantic-only."
+
+      - name: Run orchestration tests (engine, schemas, closed-loop, LLM)
+        run: pytest tests/orchestration/ -q
+
+      - name: Audit Windows/WSL skill (regression)
+        run: python scripts/audits/audit_windows_wsl_skill.py
+
+      - name: Audit Linux agent skill (Pydantic playbook render)
+        run: python scripts/audits/audit_linux_agent_skill.py

@@ -2765,3 +2765,144 @@ npm --prefix src/ui run build</pre>
     @staticmethod
     def error(message: str, code: int = 400) -> tuple[int, dict]:
         return code, {"ok": False, "message": message}
+
+    # ------------------------------------------------------------------
+    # Orchestration (event-driven, DB-as-source-of-truth)
+    # ------------------------------------------------------------------
+
+    def orchestration_list_objects(self, **params) -> dict:
+        service = self.app.orchestration_service
+        filters = {k: v for k, v in params.items() if k in {"kind", "environment", "state", "limit"}}
+        if "limit" in filters:
+            try:
+                filters["limit"] = int(filters["limit"])
+            except (TypeError, ValueError):
+                filters.pop("limit", None)
+        objects = service.list_objects(**filters)
+        return {
+            "ok": True,
+            "objects": [obj.to_dict() for obj in objects],
+            "count": len(objects),
+        }
+
+    def orchestration_create_object(self, body: dict) -> dict:
+        service = self.app.orchestration_service
+        name = str(body.get("name") or "").strip()
+        if not name:
+            return {"ok": False, "message": "`name` is required."}
+        obj = service.create_object(
+            kind=str(body.get("kind") or "agent_host"),
+            name=name,
+            environment=str(body.get("environment") or "unknown"),
+            runner=str(body.get("runner") or ""),
+            payload=body.get("payload") if isinstance(body.get("payload"), dict) else None,
+            object_id=body.get("object_id"),
+        )
+        return {"ok": True, "object": obj.to_dict()}
+
+    def orchestration_get_object(self, object_id: str) -> dict:
+        obj = self.app.orchestration_service.get_object(object_id)
+        if obj is None:
+            return {"ok": False, "message": f"Unknown object: {object_id}"}
+        return {"ok": True, "object": obj.to_dict()}
+
+    def orchestration_update_object(self, object_id: str, body: dict) -> dict:
+        service = self.app.orchestration_service
+        fields = {
+            key: body[key]
+            for key in ("state", "environment", "runner", "name")
+            if key in body
+        }
+        if isinstance(body.get("payload"), dict):
+            fields["payload"] = body["payload"]
+        obj = service.update_object(object_id, **fields)
+        if obj is None:
+            return {"ok": False, "message": f"Unknown object: {object_id}"}
+        return {"ok": True, "object": obj.to_dict()}
+
+    def orchestration_delete_object(self, object_id: str) -> dict:
+        deleted = self.app.orchestration_service.delete_object(object_id)
+        return {"ok": deleted, "object_id": object_id}
+
+    def orchestration_get_events(self, object_id: str) -> dict:
+        service = self.app.orchestration_service
+        if service.get_object(object_id) is None:
+            return {"ok": False, "message": f"Unknown object: {object_id}"}
+        events = service.get_events(object_id)
+        return {"ok": True, "object_id": object_id, "events": events, "count": len(events)}
+
+    def orchestration_get_decisions(self, object_id: str) -> dict:
+        service = self.app.orchestration_service
+        if service.get_object(object_id) is None:
+            return {"ok": False, "message": f"Unknown object: {object_id}"}
+        decisions = service.get_decisions(object_id)
+        return {"ok": True, "object_id": object_id, "decisions": decisions, "count": len(decisions)}
+
+    def orchestration_ingest_event(self, object_id: str, body: dict) -> dict:
+        service = self.app.orchestration_service
+        event_type = str(body.get("event_type") or "").strip()
+        if not event_type:
+            return {"ok": False, "message": "`event_type` is required."}
+        payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
+        try:
+            result = service.ingest_event(object_id, event_type, payload)
+        except KeyError as exc:
+            return {"ok": False, "message": str(exc)}
+        return {"ok": True, **result}
+
+    def orchestration_resolve_environment(self, environment: str) -> dict:
+        profile = self.app.orchestration_service.resolve_environment(environment)
+        return {"ok": True, "profile": profile}
+
+    # ------------------------------------------------------------------
+    # Orchestration: typed playbook + Instructor proposals
+    # ------------------------------------------------------------------
+
+    def orchestration_render_playbook(self, object_id: str) -> dict:
+        try:
+            return self.app.orchestration_service.render_playbook(object_id)
+        except KeyError as exc:
+            return {"ok": False, "message": str(exc)}
+
+    def orchestration_propose_action(self, object_id: str, body: dict) -> dict:
+        try:
+            return self.app.orchestration_service.propose_next_action(object_id)
+        except KeyError as exc:
+            return {"ok": False, "message": str(exc)}
+
+    def orchestration_detect_environment(self, body: dict) -> dict:
+        evidence = str(body.get("evidence") or "").strip()
+        if not evidence:
+            return {"ok": False, "message": "`evidence` is required."}
+        return self.app.orchestration_service.detect_environment(evidence)
+
+    # ------------------------------------------------------------------
+    # Internal validation agent (merge readiness)
+    # ------------------------------------------------------------------
+
+    def orchestration_run_merge_gate(self, body: dict) -> dict:
+        from deepscientist.orchestration.agent import DEFAULT_MERGE_CHECKS, run_merge_gate
+
+        checks = body.get("checks") if isinstance(body.get("checks"), list) and body.get("checks") else list(DEFAULT_MERGE_CHECKS)
+        max_attempts = int(body.get("max_attempts", 1))
+        name = str(body.get("name") or "merge-gate")
+        # Run in a subprocess so a hard crash during tests cannot kill the daemon.
+        return run_merge_gate(
+            self.app.orchestration_service,
+            repo_root=self.app.repo_root,
+            object_name=name,
+            max_attempts=max_attempts,
+            checks=checks,
+        )
+
+    def orchestration_verdict(self, object_id: str) -> dict:
+        try:
+            from deepscientist.orchestration.agent import InternalValidationAgent
+
+            agent = InternalValidationAgent(
+                self.app.orchestration_service, repo_root=self.app.repo_root
+            )
+            verdict = agent.closed_loop_verdict(object_id)
+            return {"ok": True, "verdict": verdict.model_dump(mode="json")}
+        except KeyError as exc:
+            return {"ok": False, "message": str(exc)}

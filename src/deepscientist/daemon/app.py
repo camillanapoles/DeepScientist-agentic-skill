@@ -64,6 +64,7 @@ from ..config.models import SYSTEM_CONNECTOR_NAMES
 from ..diagnostics import FailureDiagnosis, diagnose_runner_failure
 from ..home import repo_root
 from ..memory import MemoryService
+from ..orchestration import OrchestrationService
 from ..network import urlopen_with_proxy as urlopen
 from ..latex_runtime import QuestLatexService
 from ..connector.lingzhu_support import (
@@ -85,7 +86,7 @@ from ..prompts import PromptBuilder
 from ..prompts.builder import classify_turn_intent, current_standard_skills
 from ..connector.qq_profiles import list_qq_profiles, merge_qq_profile_config, normalize_qq_connector_config
 from ..quest import AUTONOMOUS_BLOCKING_WAIT_REASONS, QuestService
-from ..runners import ClaudeRunner, CodexRunner, KimiRunner, OpenCodeRunner, RunRequest, get_runner_factory, register_builtin_runners
+from ..runners import ClaudeRunner, CodexRunner, KimiRunner, OmpRunner, OpenCodeRunner, RunRequest, get_runner_factory, register_builtin_runners
 from ..runners.metadata import get_runner_metadata
 from ..runtime_logs import JsonlLogger
 from ..shared import append_jsonl, ensure_dir, generate_id, iter_jsonl, read_json, read_jsonl, read_jsonl_tail, read_text, resolve_within, run_command, slugify, utc_now, utf8_text_subprocess_kwargs, which, write_json
@@ -216,6 +217,7 @@ class DaemonApp:
         self.bash_exec_service = BashExecService(home)
         self.team_service = SingleTeamService(home)
         self.cloud_service = CloudLinkService(home)
+        self.orchestration_service = OrchestrationService.for_home(home)
         config = self.runtime_config
         skill_config = config.get("skills") if isinstance(config.get("skills"), dict) else {}
         self.skill_sync_summary = self.skill_installer.ensure_release_sync(
@@ -248,6 +250,14 @@ class DaemonApp:
             self.repo_root,
             home,
             prompt_version_selection=prompt_version_selection,
+        )
+        self.omp_runner = OmpRunner(
+            home=home,
+            repo_root=self.repo_root,
+            binary=self.runners_config.get("omp", {}).get("binary", "omp"),
+            logger=self.logger,
+            prompt_builder=self.prompt_builder,
+            artifact_service=self.artifact_service,
         )
         self.codex_runner = CodexRunner(
             home=home,
@@ -282,6 +292,7 @@ class DaemonApp:
             artifact_service=self.artifact_service,
         )
         register_builtin_runners(
+            omp_runner=self.omp_runner,
             codex_runner=self.codex_runner,
             claude_runner=self.claude_runner,
             kimi_runner=self.kimi_runner,
@@ -291,7 +302,7 @@ class DaemonApp:
         register_builtin_channels(home=home, connectors_config=self.connectors_config)
         self.runners = {
             name: self._create_runner(name)
-            for name in ("codex", "claude", "kimi", "opencode")
+            for name in ("omp", "codex", "claude", "kimi", "opencode")
         }
         self.channels = {name: self._create_channel(name) for name in list_channel_names()}
         self.sessions = SessionStore()
@@ -1640,6 +1651,7 @@ class DaemonApp:
     def reload_runners_config(self) -> dict[str, object]:
         self.runners_config = self.config_manager.load_runners_config()
         runner_instances = {
+            "omp": self.omp_runner,
             "codex": self.codex_runner,
             "claude": self.claude_runner,
             "kimi": self.kimi_runner,
@@ -7008,6 +7020,8 @@ class DaemonApp:
             return "Claude Code"
         if normalized == "opencode":
             return "Open Code"
+        if normalized == "omp":
+            return "Oh My Pi"
         try:
             metadata = get_runner_metadata(normalized)
         except Exception:
@@ -8799,7 +8813,7 @@ class DaemonApp:
                         "repair_create",
                         "repair_close",
                         "hardware_update",
-                    } or route_name in {"document_open", "document_asset_upload", "quest_file_create_folder", "quest_file_upload", "quest_file_rename", "quest_file_move", "quest_file_delete", "chat_upload_create", "chat_upload_delete", "chat", "command", "quest_control", "quest_message_read_now", "quest_message_withdraw", "config_save", "quest_create", "quest_baseline_binding", "run_create", "qq_inbound", "connector_inbound", "docs_open", "bash_stop", "quest_settings", "quest_bindings", "quest_delete", "quest_layout_update", "terminal_session_ensure", "terminal_attach", "terminal_input", "stage_view", "latex_init", "latex_compile", "system_update_action", "weixin_login_qr_start", "weixin_login_qr_wait", "arxiv_import", "annotation_create", "auth_login", "auth_rotate"}:
+                    } or route_name in {"document_open", "document_asset_upload", "quest_file_create_folder", "quest_file_upload", "quest_file_rename", "quest_file_move", "quest_file_delete", "chat_upload_create", "chat_upload_delete", "chat", "command", "quest_control", "quest_message_read_now", "quest_message_withdraw", "config_save", "quest_create", "quest_baseline_binding", "run_create", "qq_inbound", "connector_inbound", "docs_open", "bash_stop", "quest_settings", "quest_bindings", "quest_delete", "quest_layout_update", "terminal_session_ensure", "terminal_attach", "terminal_input", "stage_view", "latex_init", "latex_compile", "system_update_action", "weixin_login_qr_start", "weixin_login_qr_wait", "arxiv_import", "annotation_create", "auth_login", "auth_rotate", "orchestration_create_object", "orchestration_update_object", "orchestration_delete_object", "orchestration_ingest_event", "orchestration_propose_action", "orchestration_detect_environment", "orchestration_run_merge_gate"}:
                         payload = result(**params, body=body)
                     elif route_name == "config_validate":
                         payload = result(body)
