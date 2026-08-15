@@ -330,6 +330,7 @@ def test_service_propose_action_degrades_gracefully_without_api_key(tmp_path) ->
     from deepscientist.orchestration.llm import OrchestrationLLM
 
     os.environ.pop("OPENAI_API_KEY", None)
+    os.environ.pop("ZAI_API_KEY", None)
     service = OrchestrationService(create_store(tmp_path / "s.db"), llm=OrchestrationLLM())
     obj = service.create_object(name="llm-host", environment="linux")
     result = service.propose_next_action(obj.object_id)
@@ -337,3 +338,28 @@ def test_service_propose_action_degrades_gracefully_without_api_key(tmp_path) ->
     assert result["ok"] is False
     assert result["available"] is False
     assert "reason" in result
+
+
+def test_llm_defaults_to_zai_glm_provider() -> None:
+    """The orchestration LLM must default to the z.ai coding plan (glm-5.2)."""
+    import os
+    from deepscientist.orchestration.llm import OrchestrationLLM
+
+    saved = {k: os.environ.get(k) for k in ("DS_ORCHESTRATION_MODEL", "DS_ORCHESTRATION_PROVIDER", "DS_ORCHESTRATION_BASE_URL")}
+    for k in saved:
+        os.environ.pop(k, None)
+    try:
+        llm = OrchestrationLLM()
+        assert llm.provider == "zai"
+        assert llm.model == "glm-5.2"
+        assert llm.base_url == "https://api.z.ai/api/coding/paas/v4"
+
+        openai_llm = OrchestrationLLM(provider="openai")
+        assert openai_llm.provider == "openai"
+        assert openai_llm.model == "glm-5.2"  # explicit model override still possible
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v

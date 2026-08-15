@@ -120,20 +120,40 @@ def _build_proposal_prompt(obj: ManagedObject, last_rationale: str | None) -> st
 class OrchestrationLLM:
     """Thin wrapper around Instructor for structured orchestration proposals."""
 
+    #: Default provider is ZAI (z.ai coding plan, OpenAI-compatible wire API).
+    #: Set DS_ORCHESTRATION_PROVIDER=openai to use OpenAI directly.
+    ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
+    DEFAULT_PROVIDER = "zai"
+    DEFAULT_MODEL = "glm-5.2"
+
     def __init__(
         self,
         *,
         model: str | None = None,
         provider: str | None = None,
+        base_url: str | None = None,
         max_retries: int = 3,
     ) -> None:
-        self.model = model or os.environ.get("DS_ORCHESTRATION_MODEL", "gpt-4o-mini")
-        self.provider = provider or os.environ.get("DS_ORCHESTRATION_PROVIDER", "openai")
+        self.model = model or os.environ.get("DS_ORCHESTRATION_MODEL", self.DEFAULT_MODEL)
+        self.provider = (
+            provider or os.environ.get("DS_ORCHESTRATION_PROVIDER", self.DEFAULT_PROVIDER)
+        ).strip().lower()
+        self.base_url = (
+            base_url
+            or os.environ.get("DS_ORCHESTRATION_BASE_URL")
+            or (self.ZAI_BASE_URL if self.provider == "zai" else os.environ.get("OPENAI_BASE_URL", ""))
+        ).strip()
         self.max_retries = max_retries
         self._client: Any | None = None
         self._init_error: str | None = None
 
     # ------------------------------------------------------------------ setup
+
+    def _api_key(self) -> str | None:
+        """Resolve the API key for the active provider."""
+        if self.provider == "zai":
+            return os.environ.get("ZAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        return os.environ.get("OPENAI_API_KEY")
 
     def _ensure_client(self) -> Any | None:
         if self._client is not None:
@@ -147,12 +167,19 @@ class OrchestrationLLM:
             self._init_error = f"instructor/openai not installed: {exc}"
             logger.warning("Orchestration LLM unavailable: %s", self._init_error)
             return None
-        if not os.environ.get("OPENAI_API_KEY") and self.provider == "openai":
-            self._init_error = "OPENAI_API_KEY is not set"
+        api_key = self._api_key()
+        if not api_key:
+            self._init_error = (
+                f"no API key for provider {self.provider!r} "
+                "(set ZAI_API_KEY for the z.ai coding plan, or OPENAI_API_KEY)"
+            )
             logger.warning("Orchestration LLM unavailable: %s", self._init_error)
             return None
         try:
-            base_client = OpenAI()
+            base_client = OpenAI(
+                api_key=api_key,
+                base_url=self.base_url or None,
+            )
             self._client = instructor.from_openai(
                 base_client,
                 mode=instructor.Mode.JSON,
