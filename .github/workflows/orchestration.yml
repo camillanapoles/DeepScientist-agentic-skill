@@ -59,14 +59,24 @@ jobs:
 
       - name: Assert no text-templating engine (Jinja2 etc.) in skill or src
         run: |
-          if grep -rniE "jinja|mako|cheetah|\.j2\b" \
-               src/deepscientist/orchestration \
-               skills/deepscientist-linux-agent-setup \
-               --include="*.py" --include="*.md" 2>/dev/null; then
-            echo "Found forbidden text-templating reference" >&2
+          # Forbid real template-engine USAGE, not string mentions inside detectors.
+          # 1) imports / engine instantiation in Python
+          if grep -rniE "^[[:space:]]*(import|from)[[:space:]]+(jinja|mako|cheetah)|(jinja2|mako|cheetah)\.(Environment|Template)" \
+               src/deepscientist/orchestration skills/deepscientist-linux-agent-setup \
+               --include="*.py" 2>/dev/null; then
+            echo "Found text-templating engine import/instantiation" >&2
             exit 1
           fi
-          if find skills/deepscientist-linux-agent-setup -name "*.j2" -o -name "*.jinja" | grep -q .; then
+          # 2) template interpolation syntax anywhere
+          if grep -rnE "\{\{|\{%" \
+               src/deepscientist/orchestration skills/deepscientist-linux-agent-setup \
+               --include="*.py" --include="*.md" 2>/dev/null; then
+            echo "Found template interpolation syntax" >&2
+            exit 1
+          fi
+          # 3) template files on disk
+          if find src/deepscientist/orchestration skills/deepscientist-linux-agent-setup \
+               \( -name "*.j2" -o -name "*.jinja" -o -name "*.jinja2" -o -name "*.tmpl" \) | grep -q .; then
             echo "Found forbidden template file" >&2
             exit 1
           fi
