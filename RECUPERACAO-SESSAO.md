@@ -72,3 +72,33 @@ python -m pytest tests/test_windows_wsl_skill.py -q              -> 4 passed
 Os PRs #2 e #3 continuam abertos e destrutivos. A recomendação é fechá-los sem
 merge, já que o conteúdo correto já está no `main` e replicado nesta branch.
 Nenhuma branch foi apagada e nenhum PR foi fechado sem confirmação.
+
+## Atualização: rebase sobre a base pré-hoje
+
+O estado acima foi refeito descartando **todos** os commits de 14/08/2026. A
+branch foi reconstruída a partir de `b366244` ("docs: update WeChat group QR
+image", 28/06/2026), o último commit anterior a hoje, e os dois patches foram
+reaplicados com `git am` sem conflito.
+
+Commits de hoje dispensados na reconstrução:
+
+| Commit | Autor | Descrição |
+|---|---|---|
+| `c9ab927` | Camilla Napoles | Add Windows/WSL skill audit workflow |
+| `2e82a68` | camillanapoles | Add deterministic Windows WSL skill audit |
+| `cbbdd94` | arena-ai-coding-agent | merge do PR #1 |
+| `398b5dd`, `ba1a765` | cnmfs | os dois reverts |
+| `fe328bd` | Camilla Napoles | merge de main |
+| `14fb7aa`, `d420f9f`, `52d77ce`, `e2260bd` | gitsync | cadeia de merges automáticos |
+
+O conteúdo do skill resultante é idêntico ao do `main` (`git diff cbbdd94 HEAD
+-- skills/ scripts/ tests/` é vazio), mas o histórico agora é linear: base
+limpa de junho + 2 commits.
+
+### Sobre o workflow
+
+`.github/workflows/windows-wsl-skill-audit.yml` veio do commit de hoje
+`c9ab927` e portanto **não** está nesta branch reconstruída. Ele continua
+presente no `main`, e o merge desta branch no `main` o preserva (verificado com
+um merge de teste). O CI volta a funcionar porque os arquivos que ele invoca
+passam a existir.
