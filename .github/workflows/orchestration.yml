@@ -70,7 +70,7 @@ jobs:
           # 2) template interpolation syntax anywhere
           if grep -rnE "\{\{|\{%" \
                src/deepscientist/orchestration skills/deepscientist-linux-agent-setup \
-               --include="*.py" --include="*.md" 2>/dev/null; then
+               --include="*.md" --include="*.yaml" --include="*.yml" --include="*.txt" 2>/dev/null; then
             echo "Found template interpolation syntax" >&2
             exit 1
           fi
