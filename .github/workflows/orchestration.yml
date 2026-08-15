@@ -91,4 +91,43 @@ jobs:
       - name: Audit Linux agent skill (Pydantic playbook render)
         run: python scripts/audits/audit_linux_agent_skill.py
 
+      - name: Detect LLM key presence
+        id: llmkey
+        env:
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+        run: |
+          if [ -n "$ZAI_API_KEY" ]; then
+            echo "present=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: LLM smoke gate (Instructor -> z.ai glm-5.2, only when ZAI_API_KEY secret exists)
+        if: steps.llmkey.outputs.present == 'yes'
+        env:
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+        run: |
+          python - <<'PY'
+          import sys, tempfile
+          from pathlib import Path
+          sys.path.insert(0, "src")
+          from deepscientist.orchestration import OrchestrationService, create_store
+          from deepscientist.orchestration.llm import OrchestrationLLM
+
+          llm = OrchestrationLLM()
+          assert llm.provider == "zai", f"unexpected provider: {llm.provider}"
+          assert llm.model == "glm-5.2", f"unexpected model: {llm.model}"
+          assert llm.base_url == "https://api.z.ai/api/coding/paas/v4"
+          assert llm.available, f"LLM client unavailable: {llm._init_error}"
+          with tempfile.TemporaryDirectory() as td:
+              service = OrchestrationService(create_store(Path(td) / "smoke.db"), llm=llm)
+              obj = service.create_object(name="ci-llm-smoke", environment="linux")
+              result = service.propose_next_action(obj.object_id)
+              assert result.get("ok") and result.get("available"), f"proposal failed: {result}"
+              proposal = result["proposal"]
+              print("proposed_event_type:", proposal["proposed_event_type"])
+              print("confidence:", proposal["confidence"])
+          print("LLM SMOKE OK - z.ai glm-5.2 via Instructor")
+          PY
+
 # workflow-refresh: 2026-08-15 (re-register after history rewrite)
