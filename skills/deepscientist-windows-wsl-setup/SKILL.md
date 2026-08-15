@@ -1,203 +1,87 @@
 ---
 name: deepscientist-windows-wsl-setup
-description: Install, repair, and validate DeepScientist on Windows with WSL2 until the Windows browser can open the DeepScientist Web UI. Use for WSL distro setup, Linux prerequisites, Codex auth/profile and proxy repair, deterministic handoff gates, and final ds doctor plus http://127.0.0.1:20999 verification.
+description: Install, repair, and validate DeepScientist on Windows with WSL2 until the Windows browser can open the DeepScientist Web UI. Use when an agent needs to set up or fix DeepScientist on a Windows machine, including WSL distro creation, Linux-side Node/Python prerequisites, Codex auth/relay configuration, WSL proxy troubleshooting, and final `ds doctor` or Web UI verification.
 ---
 
 # DeepScientist Windows WSL Setup
 
-## Operating-environment contract
-
-Be explicit about two different environments:
-
-- **Current repository/agent branch default: Linux.** Linux is the default environment for GitOps audits, repository tests, markdown/YAML/PowerShell syntax checks, and development of this skill.
-- **Target user environment: Windows host plus WSL2 Linux distro.** Windows owns `wsl.exe`, Hyper-V, firewall, proxy listeners, browser, and reboots. The selected WSL2 distro owns the Linux-native DeepScientist runtime.
-
-`wsl.exe is a Windows administrative client`; run it from Windows PowerShell. Run `apt`, Linux `node`, `npm`, `uv`, `codex`, and `ds` inside the selected WSL2 distro. **do not treat a Linux sandbox as evidence that the target Windows machine is ready.**
-
 ## One-liner for humans
 
-Copy this to any AI coding agent:
+Copy this to any AI coding agent (Claude Code, Codex, Cursor, etc.) to trigger the install:
 
-> Install DeepScientist on this Windows machine using WSL2. Follow `deepscientist-windows-wsl-setup/SKILL.md`, keep the runtime inside a dedicated WSL2 distro, and keep going until `ds doctor` passes and I can open http://127.0.0.1:20999 in my Windows browser.
+> Install DeepScientist on this Windows machine using WSL2. Follow the skill at `deepscientist-windows-wsl-setup/SKILL.md` in the DeepScientist repo for the full procedure. Keep going until `ds doctor` passes and I can open http://127.0.0.1:20999 in my Windows browser.
 
-## Source-of-truth refresh
+## Workflow
 
-Before changing anything, read the current checked-in docs and compare them with this skill:
-
-1. `README.md`
-2. `docs/en/32_WINDOWS_WSL2_DEPLOYMENT_GUIDE.md`
-3. `docs/en/15_CODEX_PROVIDER_SETUP.md`
-4. `docs/en/09_DOCTOR.md`
-5. this skill and its references:
-   - `orchestration/deterministic-playbook.md`
-   - `checklists/completion-checklist.md`
-   - `references/deepscientist-windows-wsl-notes.md`
-   - `scripts/find-wsl-proxy.ps1`
-
-Prefer the current repository docs over memorized commands. If a version pin, CLI flag, or provider endpoint changed, update this skill in the same change. The current Windows/WSL guide pins **Codex CLI 0.57.0** for the verified WSL path; do not install a newer CLI unless the official guide says the provider route supports it.
-
-## Deterministic orchestration
-
-Follow the state machine in `orchestration/deterministic-playbook.md`. The short version is:
-
-1. **Inventory** Windows/WSL state before changing it.
-2. **Preflight** WSL health; do not install until WSL starts.
-3. **Select or create** a dedicated WSL2 Ubuntu distro.
-4. **Lock interop** so Linux does not accidentally use Windows-mounted `node`, `npm`, or `codex`.
-5. **Install Linux prerequisites**, Node.js 20, npm user prefix, DeepScientist, pinned Codex CLI, and `uv`.
-6. **Choose one Codex auth/provider route** and validate it directly.
-7. **Test network/proxy**, then persist proxy only after a live WSL-side proxy test.
-8. **Run `ds doctor`** using the same profile/environment as the direct Codex smoke test.
-9. **Launch detached** so `ds` survives the agent shell.
-10. **Open the Windows browser** to `http://127.0.0.1:20999`.
-
-Do not mark work complete from memory or assumptions. Each transition requires an observation and validation command from the target machine.
-
-## Hard stop gates
-
-Stop and ask for a human action when:
-
-- WSL fails with `HCS_E_CONNECTION_TIMEOUT`, Hyper-V is disabled, virtualization is off, or a reboot is pending.
-- The user wants to reuse, overwrite, unregister, or migrate an existing distro and has not explicitly confirmed destructive action.
-- A proxy listens only on `127.0.0.1`; the user must enable **Allow LAN** or equivalent.
-- Codex has no valid ChatGPT auth, API key, relay key, or named provider credential.
-- A firewall or browser/GUI action is required.
-- Direct `codex exec` fails. Fix Codex/provider/network first; `ds doctor` is not the first debugger.
-
-## Linux default for audit and development
-
-Repository automation for this skill runs on Linux by design. It should validate files and deterministic contracts without requiring a Windows host:
-
-```bash
-python scripts/audits/audit_windows_wsl_skill.py
-python -m py_compile scripts/audits/audit_windows_wsl_skill.py
-pwsh -NoLogo -NoProfile -Command '$null = [scriptblock]::Create((Get-Content -Raw "skills/deepscientist-windows-wsl-setup/scripts/find-wsl-proxy.ps1")); "proxy-script-parse-ok"'
-```
-
-Linux CI can audit the skill; it cannot prove that the user's WSL VM, proxy, firewall, or browser works.
+1. Read the current official DeepScientist README and Windows WSL2 deployment guide before changing anything. Use the official repo as the source of truth for install commands and note any version pins or prerequisites that changed.
+2. Inspect the machine first:
+   - `wsl -l -v`
+   - `wsl --status`
+   - Check whether a usable WSL2 Ubuntu distro already exists.
+   - Check whether Linux-side `node`, `npm`, `git`, `uv`, `codex`, and `ds` already exist inside the target distro.
+3. Prefer a dedicated WSL2 Ubuntu distro for DeepScientist instead of modifying `docker-desktop` or converting an unrelated user distro unless the user asks for that explicitly.
+4. Keep working until these end-state checks pass:
+   - Linux-side `codex exec --skip-git-repo-check "Print exactly OK and exit."` succeeds.
+   - `ds doctor` reports `[ok] Codex CLI` (or `[warn] Codex CLI: Codex startup probe completed.`).
+   - `ds` starts and Windows can open `http://127.0.0.1:20999`.
 
 ## Human actions required
 
+Some steps require the human to act. The agent cannot do these:
+
 | When | What the human must do |
 |------|------------------------|
-| WSL cannot start (`HCS_E_CONNECTION_TIMEOUT`) | Reboot the PC; resolve pending Windows updates, Hyper-V, or BIOS virtualization. |
-| Proxy listens only on `127.0.0.1` | Open Clash/v2rayN/etc. and enable **Allow LAN** so it listens on a non-loopback address. |
-| No valid Codex auth or provider key | Run `codex login` in a GUI terminal, or provide an API key/relay credential through an approved secret path. |
-| ChatGPT subscription expired | Renew it or provide a Codex-compatible API relay/profile. |
-| Firewall blocks WSL networking | Allow WSL/Hyper-V through Windows Firewall. |
-| Browser setup or GUI login is required | Complete the GUI step and tell the agent when to resume. |
+| WSL cannot start (HCS_E_CONNECTION_TIMEOUT) | Reboot the PC. Pending Windows updates or long uptimes cause Hyper-V VM creation to fail. |
+| Proxy listens only on 127.0.0.1 | Open the proxy app (Clash, v2rayN, etc.) and enable **Allow LAN** so it listens on 0.0.0.0. |
+| No valid OpenAI auth | Either (a) run `codex login` in a GUI terminal, or (b) provide an API key or relay config. |
+| ChatGPT subscription expired | Renew subscription, or provide a third-party API relay endpoint and key. |
+| Firewall blocks WSL networking | Temporarily allow WSL/Hyper-V through Windows Firewall. |
 
 ## Pre-flight checks (critical)
 
-Run these from Windows PowerShell first:
+### HCS_E_CONNECTION_TIMEOUT
+If `wsl -d <distro> -- echo hello` fails with `HCS_E_CONNECTION_TIMEOUT`:
+1. Check pending reboot: look at `HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager` for `PendingFileRenameOperations`.
+2. Check uptime: `(Get-CimInstance Win32_OperatingSystem).LastBootUpTime`. If > 7 days, suggest reboot.
+3. Try `wsl --shutdown` then retry. If it still fails, a reboot is required.
+4. **Do not proceed with installation until WSL can start.**
 
-```powershell
-wsl --status
-wsl -l -v
-wsl --version
-[Environment]::Is64BitOperatingSystem
-(Get-CimInstance Win32_OperatingSystem).Caption
-(Get-CimInstance Win32_OperatingSystem).LastBootUpTime
-```
-
-Test the selected or candidate distro:
-
-```powershell
-wsl -d <distro> -- echo hello
-```
-
-If the test fails with `HCS_E_CONNECTION_TIMEOUT`:
-
-1. Check pending reboot data under `HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager`.
-2. If uptime is long or updates are pending, ask the user to reboot.
-3. Try `wsl --shutdown`, then retry.
-4. Do not install until WSL starts reliably.
-
-Check memory before creating a distro:
-
+### Available memory
+If free memory < 2 GB, warn the user. WSL2 VM needs at least 1 GB to start reliably. Check with:
 ```powershell
 $mem = Get-CimInstance Win32_OperatingSystem
-[math]::Round($mem.FreePhysicalMemory / 1MB, 2)
+[math]::Round($mem.FreePhysicalMemory/1MB,2)
 ```
-
-Warn the user if free memory is below 2 GB.
 
 ## Distro setup
 
-Prefer a dedicated WSL2 Ubuntu distro for DeepScientist. Do not modify `docker-desktop`, `docker-desktop-data`, or an unrelated user distro unless the user explicitly asks.
-
-Preferred dedicated-distro creation flow with a direct Ubuntu WSL rootfs:
-
-```powershell
-New-Item -ItemType Directory -Force D:\WSL\Backups,D:\WSL\DeepScientist | Out-Null
-$rootfs = 'D:\WSL\Backups\ubuntu-jammy-wsl.rootfs.tar.gz'
-if (-not (Test-Path $rootfs)) {
-  curl.exe -L 'https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-wsl.rootfs.tar.gz' -o $rootfs
-}
-wsl --import DeepScientist D:\WSL\DeepScientist $rootfs --version 2
-wsl -d DeepScientist --user root -- /bin/true
-```
-
-Using a direct rootfs avoids the Store Ubuntu first-user OOBE and makes the setup deterministic. If the user cannot download the rootfs, fall back to the official `wsl --install -d Ubuntu-22.04` flow, complete the normal interactive user creation, then export/import it as a dedicated distro only if the user explicitly approves.
-
-Then create a normal non-root user inside the imported distro and make it the default user with `/etc/wsl.conf`:
-
-```bash
-adduser ds
-usermod -aG sudo ds
-printf '[user]\ndefault=ds\n' | sudo tee -a /etc/wsl.conf
-```
-
-From Windows PowerShell:
-
-```powershell
-wsl --terminate DeepScientist
-wsl -d DeepScientist -- whoami
-```
-
-Do not unregister the base Ubuntu distro unless the user explicitly asks for cleanup. If the host already has a clean WSL2 Ubuntu 22.04 image that the user wants imported directly, `wsl --import` may use that tarball instead.
-
-Prefer Ubuntu 22.04 for the current verified Codex 0.57.0 path. Ubuntu 24.04 is acceptable only after checking that Python venv package names and provider behavior still work.
-
-Disable Windows PATH injection in the target distro:
+- If no suitable WSL2 Ubuntu distro exists, install one with a dedicated name such as `DeepScientist`.
+- Prefer Ubuntu 22.04 or 24.04 unless the official guide says otherwise.
+- If the user already has a broken WSL1 distro, do not repurpose it by default. Create a new WSL2 distro and leave the old one alone.
+- After installation, create a normal Linux user such as `ds` and make it the default user for that distro.
+- Disable Windows PATH injection in the DeepScientist distro to avoid accidentally using Windows-side `npm`, `codex`, or other binaries:
 
 ```bash
 printf '[interop]\nappendWindowsPath=false\n' | sudo tee /etc/wsl.conf
 ```
 
-Then from Windows PowerShell:
-
-```powershell
-wsl --terminate <distro>
-wsl -d <distro> -- bash -lc 'command -v node || true; command -v npm || true; command -v codex || true'
-```
-
-After restart, no required binary may resolve to `/mnt/c/...`.
+- **Restart that distro after changing `/etc/wsl.conf`** with `wsl --terminate <distro>`.
+- After restart, verify that `command -v node` does NOT resolve to `/mnt/c/...`.
 
 ## Linux prerequisites
 
-Inside the selected distro, identify Ubuntu version first:
+Install the Linux-side dependencies inside the target distro. Prefer native Linux binaries over Windows binaries mounted under `/mnt/c` or other drives.
 
-```bash
-lsb_release -r
-```
-
-Ubuntu 24.04:
-
+Required baseline (adapt the python3-venv package name to the distro version):
 ```bash
 sudo apt-get update
+# Ubuntu 24.04:
 sudo apt-get install -y ca-certificates curl gnupg git sudo build-essential python3-venv python3-pip
-```
-
-Ubuntu 22.04:
-
-```bash
-sudo apt-get update
+# Ubuntu 22.04:
 sudo apt-get install -y ca-certificates curl gnupg git sudo build-essential python3.10-venv python3-pip
 ```
 
-Install Node.js 20 unless official docs changed it:
-
+Install Node.js 20 unless the official guide says otherwise:
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
 curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
@@ -206,76 +90,55 @@ sudo apt-get update
 sudo apt-get install -y nodejs
 ```
 
-Configure a user-local npm prefix:
-
+Set a user-local npm prefix so global packages do not require sudo:
 ```bash
 mkdir -p "$HOME/.npm-global" "$HOME/.local/bin"
 npm config set prefix "$HOME/.npm-global"
-grep -qxF 'export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"' "$HOME/.profile" 2>/dev/null || echo 'export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
-grep -qxF 'export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"' "$HOME/.bashrc" 2>/dev/null || echo 'export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
-. "$HOME/.profile"
+```
+
+Add to both `~/.bashrc` and `~/.profile`:
+```bash
+export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 ```
 
 ## DeepScientist installation
 
-Install the current npm package, the Codex CLI version required by the current WSL guide, and `uv`:
+- Install the current official DeepScientist package from npm.
+- Install `uv`.
+- Install the Codex CLI version required by the official DeepScientist guide. If the guide pins a specific version, follow the guide instead of guessing.
 
+Typical pattern:
 ```bash
 npm install -g @researai/deepscientist
 npm install -g @openai/codex@0.57.0
 curl -LsSf https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh | sh
-. "$HOME/.profile"
 ```
 
-If GitHub/Astral downloads fail, fix proxy/network first or use an approved mirror. Do not switch Codex versions to bypass a provider problem without documenting the compatibility tradeoff.
-
-Verify resolution:
-
+After installation, verify Linux-side resolution:
 ```bash
-command -v node npm git ds codex uv
-node --version
-npm --version
-codex --version
-uv --version
-```
-
-All required product binaries must resolve to Linux paths under `$HOME/.npm-global/bin`, `$HOME/.local/bin`, or another Linux path—not under `/mnt/c/`.
-
-## Codex auth and API profiles
-
-Choose one route, then validate that route directly before DeepScientist.
-
-### Common validation order
-
-```bash
-codex --version
+command -v ds
 command -v codex
-# default route:
-codex exec --skip-git-repo-check "Print exactly OK and exit."
-# profile route:
-codex exec --profile <profile> --skip-git-repo-check "Print exactly OK and exit."
+command -v uv
 ```
 
-For provider profiles, also follow `docs/en/15_CODEX_PROVIDER_SETUP.md`. If `codex exec --profile <profile>` fails, stop and fix Codex before running `ds doctor`.
+**All three must resolve to Linux paths** (under `$HOME/.npm-global/bin` or `$HOME/.local/bin`), NOT under `/mnt/c/`.
 
-### Option A: reuse Windows-side ChatGPT auth
+## Codex auth and API relay
 
-Use this only when the Windows ChatGPT subscription is active.
+### Option A: Reuse Windows-side ChatGPT auth
+If WSL cannot complete browser-based Codex login, reuse the Windows-side auth file:
 
-1. Inspect whether Windows has `C:\Users\<user>\.codex\auth.json`.
-2. Back up any existing Linux auth file.
-3. Copy it into `~/.codex/auth.json`.
+1. Inspect whether Windows already has a working auth file at `C:\Users\<user>\.codex\auth.json`.
+2. Back up any existing Linux auth file first.
+3. Copy the Windows auth file into `~/.codex/auth.json`.
 4. Run `chmod 600 ~/.codex/auth.json`.
-5. Validate with a direct non-interactive Codex request.
 
-Subscription expiry can make copied auth look present but fail at model access time.
+**Caveat**: If the ChatGPT subscription is expired, auth will copy successfully but `codex exec` will fail with model errors. Check `chatgpt_subscription_active_until` in the JWT token.
 
-### Option B: third-party OpenAI-compatible relay
+### Option B: Third-party API relay (common in China)
+Many users in China use third-party API relay services instead of direct OpenAI access. If the user provides a relay endpoint and API key, configure:
 
-Use this when the relay documents a Codex-compatible endpoint. Ask which model and base URL to use; do not guess.
-
-For a Responses-compatible relay that expects an OpenAI-style key, a typical shape is:
-
+**`~/.codex/config.toml`**:
 ```toml
 model_provider = "OpenAI"
 model = "<model-from-relay>"
@@ -283,6 +146,9 @@ review_model = "<model-from-relay>"
 model_reasoning_effort = "high"
 disable_response_storage = true
 network_access = "enabled"
+windows_wsl_setup_acknowledged = true
+model_context_window = 1000000
+model_auto_compact_token_limit = 900000
 
 [model_providers.OpenAI]
 name = "OpenAI"
@@ -290,199 +156,174 @@ base_url = "<relay-base-url>"
 wire_api = "responses"
 supports_websockets = true
 requires_openai_auth = true
+
+[features]
+responses_websockets_v2 = true
 ```
 
-`~/.codex/auth.json` must contain only the secret material, never a real key in docs or logs:
-
+**`~/.codex/auth.json`**:
 ```json
 {
   "OPENAI_API_KEY": "<relay-api-key>"
 }
 ```
 
-If the relay is chat-only, do not force `wire_api = "responses"`. Use Codex 0.57.0 with a named custom provider, `wire_api = "chat"`, the documented model id, `env_key` or bearer token shape supported by that relay, and `requires_openai_auth = false` when it is not using OpenAI account auth. Validate the exact provider shape with `codex exec --profile <profile>` first.
+**Known gotcha**: Codex 0.57.0 does not accept `model_reasoning_effort = "xhigh"`. Valid values are: `minimal`, `low`, `medium`, `high`. If the relay template says `xhigh`, change it to `high`.
 
-Codex 0.57.0 accepts `model_reasoning_effort` values `minimal`, `low`, `medium`, and `high`. Change `xhigh` to `high`.
+### Option C: Direct OpenAI API key
+If the user has a platform.openai.com API key:
 
-### Option C: direct OpenAI API key
-
-If the user has a platform.openai.com API key, place it in `~/.codex/auth.json` or the runner environment according to the official provider guide:
-
+**`~/.codex/auth.json`**:
 ```json
 {
-  "OPENAI_API_KEY": "<api-key>"
+  "OPENAI_API_KEY": "sk-..."
 }
 ```
 
-### Option D: documented provider profile (Bailian, MiniMax, GLM, local, etc.)
-
-For provider-specific profiles such as Bailian, MiniMax, GLM, Ark, Ollama, or another gateway, use the provider-specific block and profile from `docs/en/15_CODEX_PROVIDER_SETUP.md`. Record the selected profile and use it consistently:
-
-```bash
-ds doctor --codex-profile <profile>
-ds --codex-profile <profile>
-```
+No `config.toml` changes needed for the base URL in this case.
 
 ## Proxy and NAT repair
 
-Do not assume every machine needs a proxy. Test direct connectivity from inside WSL first:
+First determine whether the user is using a Windows-side local proxy at all. Do not assume every machine needs proxy handling.
 
+**Quick connectivity test** (run this early to decide if proxy is needed):
 ```bash
-curl -I --max-time 10 https://github.com/ || true
-curl -I --max-time 10 https://chatgpt.com/ || true
+curl -s --max-time 10 -o /dev/null -w '%{http_code}' https://chatgpt.com/
+curl -s --max-time 10 -o /dev/null -w '%{http_code}' https://github.com/
 ```
+If both return 200 or 3xx, proxy may not be needed. If `chatgpt.com` returns 000 (timeout/reset), proxy is almost certainly needed (common in China).
 
-If direct access works, do not persist proxy variables. If direct access fails and the user says a Windows proxy is in use, inspect it with the bundled read-only helper:
+### Proxy detection rules
+- Start by asking or inferring three things: whether proxy is enabled, which proxy app is in use, and which local port the user expects.
+- If those cannot be confirmed with high confidence from the machine state, stop and ask the user before writing proxy configuration.
+- Treat app-specific defaults only as candidates, not facts. Common local proxy ports include `7890`, `1080`, `10808`, `10809`, and `20170`, but users often customize them.
+- Inspect whether the Windows proxy listens only on `127.0.0.1`.
+- If it does, **ask the user to enable LAN access** or equivalent so the proxy listens on a non-loopback address. This is a human action.
+- Prefer the WSL gateway IP from `ip route` inside Linux over `/etc/resolv.conf` nameserver.
+- Test the candidate proxy address from WSL before persisting it.
 
+Use the bundled helper script for the Windows-side inspection:
 ```powershell
 pwsh -File scripts/find-wsl-proxy.ps1
+```
+
+If the user already told you the port, pass it explicitly:
+```powershell
 pwsh -File scripts/find-wsl-proxy.ps1 -Ports 7890
 ```
 
-The helper only inspects listeners and prints JSON. It never changes system proxy settings.
+### Bash variable escaping in WSL commands
+When running WSL commands from Windows (via `wsl -d Ubuntu -- bash -c "..."`), bash variable `$` signs get consumed by the calling shell. Two reliable workarounds:
+1. **Write a .sh script to a temp file** and run `wsl -d Ubuntu -- bash /mnt/c/Users/<user>/AppData/Local/Temp/script.sh`
+2. **Use a PowerShell wrapper**: write a .ps1 file containing `wsl.exe -d Ubuntu -- bash /path/to/script.sh` and execute it via `powershell.exe -ExecutionPolicy Bypass -File script.ps1`
 
-Rules:
+The PowerShell wrapper approach is the most reliable for avoiding escaping issues.
 
-- Confirm whether proxy is enabled, which app is used, and which port is intended before writing config.
-- Treat common ports (`7890`, `1080`, `10808`, `10809`, `20170`) only as candidates.
-- If a listener is loopback-only, stop and ask the human to enable LAN access.
-- Prefer the WSL default gateway from `ip route`; do not rely solely on `/etc/resolv.conf`.
-- Test the candidate before persisting.
-
-```bash
-host_ip="$(ip route 2>/dev/null | awk '/^default/ { print $3; exit }')"
-curl -I --max-time 8 -x "http://$host_ip:<confirmed-port>" https://github.com/
-```
-
-Persist only after that test passes:
-
+### Persist proxy env
+Only after the proxy port is confirmed:
 ```bash
 cat > "$HOME/.wsl-proxy-env" <<'EOF'
 host_ip="$(ip route 2>/dev/null | awk '/^default/ { print $3; exit }')"
 proxy_port="<confirmed-port>"
-if [ -n "$host_ip" ] && [ -n "$proxy_port" ]; then
+if [ -n "$host_ip" ]; then
     export http_proxy="http://$host_ip:$proxy_port"
-    export https_proxy="$http_proxy"
+    export https_proxy="http://$host_ip:$proxy_port"
     export HTTP_PROXY="$http_proxy"
-    export HTTPS_PROXY="$http_proxy"
+    export HTTPS_PROXY="$https_proxy"
     export ALL_PROXY="$http_proxy"
 fi
 EOF
-grep -qxF '[ -f "$HOME/.wsl-proxy-env" ] && . "$HOME/.wsl-proxy-env"' "$HOME/.bashrc" 2>/dev/null || echo '[ -f "$HOME/.wsl-proxy-env" ] && . "$HOME/.wsl-proxy-env"' >> "$HOME/.bashrc"
-grep -qxF '[ -f "$HOME/.wsl-proxy-env" ] && . "$HOME/.wsl-proxy-env"' "$HOME/.profile" 2>/dev/null || echo '[ -f "$HOME/.wsl-proxy-env" ] && . "$HOME/.wsl-proxy-env"' >> "$HOME/.profile"
 ```
 
-### Bash variable escaping from Windows agents
+Then source that file from both `~/.profile` and `~/.bashrc`:
+```bash
+echo '[ -f "$HOME/.wsl-proxy-env" ] && source "$HOME/.wsl-proxy-env"' >> ~/.bashrc
+echo '[ -f "$HOME/.wsl-proxy-env" ] && source "$HOME/.wsl-proxy-env"' >> ~/.profile
+```
 
-When issuing WSL commands from Windows via `wsl.exe ... bash -c "..."`, `$` variables can be consumed by the calling shell. Reliable patterns are:
-
-1. Write a `.sh` script to a Windows temp path and run `wsl.exe -d <distro> -- bash /mnt/c/.../script.sh`.
-2. Or write a PowerShell wrapper that invokes `wsl.exe -d <distro> -- bash /path/to/script.sh`, then run it with `powershell.exe -ExecutionPolicy Bypass -File wrapper.ps1`.
+Ignore the generic WSL warning about localhost proxy mirroring if:
+- the distro has a working non-localhost proxy configuration, and
+- `codex exec` and `ds doctor` both pass.
 
 ## Validation
 
-Run validation in this order, inside the target distro and with the same profile/environment used by Codex:
+Run validation in this order:
 
-1. Shell and binary paths:
-
-   ```bash
-   whoami
-   command -v node npm git ds codex uv
-   ```
-
-2. Direct Codex execution:
-
-   ```bash
-   cd /tmp
-   codex exec --skip-git-repo-check "Print exactly OK and exit."
-   # or, when using a profile:
-   codex exec --profile <profile> --skip-git-repo-check "Print exactly OK and exit."
-   ```
-
-3. DeepScientist diagnostics:
-
-   ```bash
-   ds doctor
-   # or:
-   ds doctor --codex-profile <profile>
-   ```
-
-   Accept `[ok] Codex CLI` or `[warn] Codex CLI: Codex startup probe completed.` only when the direct Codex smoke test also passed.
-
-4. Configure Git identity if needed:
-
-   ```bash
-   git config --global user.name "Your Name"
-   git config --global user.email "you@example.com"
-   ```
-
-5. Start `ds` so it outlives the agent shell. From Windows PowerShell:
-
-   ```powershell
-   Start-Process wsl.exe -ArgumentList '-d','<distro>','--','bash','-lc','cd $HOME; ds --codex-profile <profile>; exec bash'
-   ```
-
-   Omit `--codex-profile` only when using the default Codex route.
-
-6. Confirm Windows can reach:
-
-   ```text
-   http://127.0.0.1:20999
-   ```
-
-Use `checklists/completion-checklist.md` for final evidence.
-
-## Desktop shortcut
-
-Create a `.bat` file on the Desktop with the selected distro and profile:
-
-```bat
-@echo off
-start wsl.exe -d <distro> -- bash -lc "cd $HOME; ds --codex-profile <profile>; exec bash"
-timeout /t 5 /nobreak >nul
-start "" "http://127.0.0.1:20999"
+1. Verify shell path and binaries:
+```bash
+whoami
+command -v node npm git ds codex uv
 ```
 
-Use the actual distro name; do not hard-code `Ubuntu` when the dedicated distro is `DeepScientist`.
+2. Verify Codex can actually execute:
+```bash
+cd /tmp
+codex exec --skip-git-repo-check "Print exactly OK and exit."
+```
+
+3. Verify DeepScientist:
+```bash
+ds doctor
+```
+
+4. Set git user info if `ds doctor` warns about it:
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+```
+
+5. Start DeepScientist:
+```bash
+ds
+```
+
+6. Confirm Windows can reach the UI:
+```text
+http://127.0.0.1:20999
+```
+
+**Important**: When starting `ds` from an agent, the process must outlive the agent's shell. Either:
+- Start it in a separate WSL terminal window: `Start-Process wsl.exe -ArgumentList '-d','Ubuntu','--','bash','-lc','ds'`
+- Or create a .bat shortcut on the Desktop for the user to double-click.
 
 ## Troubleshooting
 
 ### WSL won't start
-
-- `HCS_E_CONNECTION_TIMEOUT`: reboot required after checking pending updates and uptime.
-- `HCS_E_HYPERV_NOT_INSTALLED`: enable virtualization in BIOS, run `bcdedit /set hypervisorlaunchtype auto`, then reboot.
-- If a distro is WSL version `1`, do not install into it until WSL2 is available or a new WSL2 distro is created.
+- **HCS_E_CONNECTION_TIMEOUT**: Reboot required. Check pending reboot registry and uptime.
+- **LxssManager stopped and won't start**: Reboot required. Service may be blocked by pending OS updates.
+- If `wsl` shows a target distro as version `1`, do not install into it until WSL2 is available or a new WSL2 distro is created.
 
 ### Binaries resolve to Windows paths
+- If `command -v ds` or `command -v codex` resolves under `/mnt/c`, fix PATH and disable Windows PATH injection before continuing.
+- After editing `/etc/wsl.conf`, you must `wsl --terminate <distro>` for changes to take effect.
 
-- Fix `/etc/wsl.conf`, terminate the distro, re-enter, and recheck `command -v`.
-- Make sure `$HOME/.npm-global/bin` and `$HOME/.local/bin` come before inherited or injected paths.
-
-### Codex and provider errors
-
-- Login success does not prove model access; always run the non-interactive `codex exec` smoke test.
-- `unknown variant xhigh`: use `high` on Codex 0.57.0.
-- `wire_api` mismatch: use the API format documented by the provider; do not force Responses on a chat-only gateway.
-- If direct Codex fails but `ds doctor` is being attempted, stop and debug Codex/provider/network first.
+### Codex model errors
+- `model is not supported when using Codex with a ChatGPT account`: ChatGPT subscription expired or model not available on the plan. Switch to API relay.
+- `unknown variant xhigh`: Codex 0.57.0 only supports `minimal`, `low`, `medium`, `high`. Change to `high`.
+- `Reconnecting... 5/5` then failure: usually a network issue. Check proxy first, then auth.
 
 ### Proxy issues
+- If you cannot reliably determine whether proxy is enabled or which port is correct, ask the user directly before editing shell proxy config.
+- If `codex exec` fails with TLS resets or websocket resets, suspect proxy reachability before suspecting auth.
+- If the copied auth file exists but `ds doctor` still says Codex startup probe failed, re-test network reachability to `chatgpt.com` and the proxy endpoint.
 
-- If the candidate listener is loopback-only, the human must enable LAN access.
-- If multiple candidate ports exist, ask which app/port is intended.
-- TLS resets, websocket resets, or long reconnects usually indicate proxy/network problems before auth problems.
+### Python package issues
+- `python3.10-venv` does not exist on Ubuntu 24.04. Use `python3-venv` instead. Always check `lsb_release -r` first.
+- The first `ds doctor` run may take 10+ minutes as it downloads and installs the Python runtime via `uv`.
 
-### Python and first-run issues
+### Other
+- If `ds` says `Codex is not marked ready yet. Running startup probe..`, treat that as a normal transitional state until proven otherwise.
+- If shell startup files were edited from Windows and start throwing syntax errors, normalize them back to LF line endings before debugging anything else.
 
-- On Ubuntu 24.04 use `python3-venv`, not `python3.10-venv`.
-- The first `ds doctor` can take several minutes while `uv` downloads the Python runtime.
-- LF line endings matter when shell startup files are edited from Windows.
+## Desktop shortcut
+
+Create a .bat file on the Desktop for the user to launch DS easily:
+```bat
+@echo off
+start wsl.exe -d Ubuntu -- bash -lc "ds; exec bash"
+timeout /t 5 /nobreak >nul
+start "" "http://127.0.0.1:20999"
+```
 
 ## References
-
-- `orchestration/deterministic-playbook.md`
-- `checklists/completion-checklist.md`
-- `references/deepscientist-windows-wsl-notes.md`
-- `scripts/find-wsl-proxy.ps1`
-- `docs/en/32_WINDOWS_WSL2_DEPLOYMENT_GUIDE.md`
-- `docs/en/15_CODEX_PROVIDER_SETUP.md`
-- `docs/en/09_DOCTOR.md`
+- Read [references/deepscientist-windows-wsl-notes.md](references/deepscientist-windows-wsl-notes.md) for the concrete repair commands, common failure patterns, and the proxy/auth decision tree.
