@@ -17,7 +17,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .schemas import (
     Environment,
