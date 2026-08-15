@@ -67,3 +67,5 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pytest
           python -m pytest tests/test_windows_wsl_skill.py -q
+
+# workflow-refresh: 2026-08-15 (re-register after history rewrite)
