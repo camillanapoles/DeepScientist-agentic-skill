@@ -8874,7 +8874,11 @@ def test_run_create_falls_back_to_enabled_default_runner_when_snapshot_runner_di
                 'stderr_text': '',
             })()
 
-    monkeypatch.setattr(app, 'get_runner', lambda name: captured.setdefault('runner_name', name) or _StubRunner())
+    def _fake_get_runner(name):
+        captured['runner_name'] = name
+        return _StubRunner()
+
+    monkeypatch.setattr(app, 'get_runner', _fake_get_runner)
 
     payload = app.handlers.run_create(
         quest_id,

@@ -44,11 +44,10 @@ def default_system_enabled_connectors() -> dict[str, bool]:
 def default_config(home: Path) -> dict:
     return {
         "home": str(home),
-        # OMP is the recommended default on Linux for the agentic setup skill,
-        # but the global config default stays "codex" for backward compatibility
-        # with existing quests and the large established test baseline.
-        # The orchestration router and the Linux setup skill select OMP directly.
-        "default_runner": "codex",
+        # OMP (oh-my-pi / pi-coding-agent) is the default runner everywhere
+        # except native Windows, matching `platform_default_runner()`.
+        # Codex remains available as an alternative runner.
+        "default_runner": "omp",
         "default_locale": "zh-CN",
         "daemon": {
             "session_restore_on_start": True,

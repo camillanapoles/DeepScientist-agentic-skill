@@ -782,6 +782,8 @@ Use **Test** when the file exposes runtime dependencies.
             result = self._probe_kimi_runner(runner_payload)
         elif normalized_runner == "opencode":
             result = self._probe_opencode_runner(runner_payload)
+        elif normalized_runner == "omp":
+            result = self._probe_omp_runner(runner_payload)
         else:
             raise KeyError(f"Unknown runner `{normalized_runner}`.")
         if persist:
@@ -2123,6 +2125,13 @@ Use **Test** when the file exposes runtime dependencies.
                 f"Install OpenCode and make sure `{binary} --version` works in the current shell.",
                 "If OpenCode is already installed elsewhere, set `runners.opencode.binary` to the absolute path.",
             ]
+        if normalized_runner == "omp":
+            return [
+                f"Install OMP and make sure `{binary} --version` works in the current shell.",
+                "Install with `bun install -g @oh-my-pi/pi-coding-agent` (or `curl -fsSL https://omp.sh/install | sh`).",
+                f"Run `omp` once interactively to complete first-run setup in `{str(config.get('config_dir') or '~/.omp')}`.",
+                f"If OMP is installed elsewhere, set `runners.omp.binary` to the absolute path.",
+            ]
         if normalized_runner == "kimi":
             return [
                 f"Install Kimi Code and make sure `{binary} --version` works in the current shell.",
@@ -2327,6 +2336,105 @@ Use **Test** when the file exposes runtime dependencies.
             "guidance": [] if ok else [
                 "Run `opencode run --format json \"Reply with exactly HELLO\"` manually and confirm it succeeds.",
                 "If OpenCode uses a custom config root, point `runners.opencode.config_dir` at the correct directory.",
+            ],
+        }
+
+    def _probe_omp_runner(self, config: dict) -> dict:
+        checked_at = utc_now()
+        binary = str(config.get("binary") or "omp").strip() or "omp"
+        resolved_binary = resolve_runner_binary(binary, runner_name="omp")
+        requested_model = str(config.get("model") or "inherit").strip() or "inherit"
+        config_dir = str(config.get("config_dir") or "~/.omp")
+        details: dict[str, object] = {
+            "binary": binary,
+            "resolved_binary": resolved_binary,
+            "config_dir": config_dir,
+            "model": requested_model,
+            "requested_model": requested_model,
+            "effective_model": requested_model,
+            "checked_at": checked_at,
+        }
+        if not resolved_binary:
+            return {
+                "ok": False,
+                "summary": "OMP startup probe failed before execution.",
+                "warnings": [],
+                "errors": [f"OMP binary `{binary}` is not available."],
+                "details": details,
+                "guidance": self._runner_missing_binary_guidance("omp", config),
+            }
+        env = ensure_utf8_subprocess_env(os.environ.copy())
+        command = [resolved_binary, "--version"]
+        try:
+            result = subprocess.run(
+                command,
+                cwd=str(repo_root()),
+                env=env,
+                capture_output=True,
+                timeout=30,
+                check=False,
+                **utf8_text_subprocess_kwargs(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            details.update({
+                "exit_code": None,
+                "stdout_excerpt": self._compact_probe_text(exc.stdout or ""),
+                "stderr_excerpt": self._compact_probe_text(exc.stderr or ""),
+            })
+            return {
+                "ok": False,
+                "summary": "OMP startup probe timed out.",
+                "warnings": [],
+                "errors": ["OMP did not answer the version probe within 30 seconds."],
+                "details": details,
+                "guidance": [
+                    "Run `omp --version` manually and confirm it responds before starting DeepScientist.",
+                ],
+            }
+        except OSError as exc:
+            details.update({
+                "exit_code": None,
+                "errors_excerpt": self._compact_probe_text(str(exc)),
+            })
+            return {
+                "ok": False,
+                "summary": "OMP startup probe failed before execution.",
+                "warnings": [],
+                "errors": [f"Failed to execute `{binary} --version`: {exc}"],
+                "details": details,
+                "guidance": self._runner_missing_binary_guidance("omp", config),
+            }
+        stdout_text = (result.stdout or "").strip()
+        stderr_text = (result.stderr or "").strip()
+        version_text = next(
+            (line.strip() for line in f"{stdout_text}\n{stderr_text}".splitlines() if line.strip().startswith("omp/")),
+            "",
+        )
+        ok = result.returncode == 0
+        config_path = Path(config_dir).expanduser()
+        warnings = []
+        if ok and not config_path.exists():
+            warnings.append(
+                f"OMP config dir `{config_dir}` does not exist yet; run `omp` once interactively to complete first-run setup/authentication."
+            )
+        if ok and stderr_text:
+            warnings.append("OMP returned stderr during the version probe.")
+        details.update({
+            "exit_code": result.returncode,
+            "version": version_text or None,
+            "stdout_excerpt": self._compact_probe_text(stdout_text),
+            "stderr_excerpt": self._compact_probe_text(stderr_text),
+            "probe_command": command,
+        })
+        return {
+            "ok": ok,
+            "summary": f"OMP startup probe completed{f' ({version_text})' if version_text else ''}." if ok else "OMP startup probe failed.",
+            "warnings": warnings,
+            "errors": [] if ok else [f"OMP did not complete `--version` successfully (exit code {result.returncode})."],
+            "details": details,
+            "guidance": [] if ok else [
+                f"Run `{binary} --version` manually and confirm it succeeds.",
+                f"If OMP is installed elsewhere, set `runners.omp.binary` to the absolute path.",
             ],
         }
 

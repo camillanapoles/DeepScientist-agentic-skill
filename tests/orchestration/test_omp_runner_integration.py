@@ -35,7 +35,12 @@ def test_omp_runner_metadata_supports_reasoning_effort() -> None:
 
 
 def test_omp_runner_builds_print_json_command() -> None:
-    """The OMP runner must build a non-interactive `omp print --json` command."""
+    """The OMP runner must build a non-interactive pi-wire JSON command.
+
+    omp >= 17 syntax: `-p --mode=json --auto-approve --cwd=<dir>`; prompt is
+    fed via stdin by the SimpleCliRunner base. Output is pi-wire session
+    events (versioned) parsed by ``_translate_event``.
+    """
     from deepscientist.runners.base import RunRequest
 
     # Construct an OmpRunner with the minimum constructor surface.
@@ -60,16 +65,78 @@ def test_omp_runner_builds_print_json_command() -> None:
     )
     command = runner._build_command(request, "PROMPT BODY")
     assert command[0].endswith("omp")
-    assert "print" in command
-    assert "--json" in command
-    assert "--yes" in command
-    assert "--cwd" in command
-    assert "/tmp/q1" in command
-    assert "--model" in command
-    assert "gpt-5" in command
-    # Prompt is read from stdin (trailing "-").
-    assert command[-1] == "-"
-    assert runner._command_uses_stdin_prompt() is True
+    assert "-p" in command
+    assert "--mode=json" in command
+    assert "--auto-approve" in command
+    assert any(str(part).startswith("--cwd=/tmp/q1") for part in command)
+    # The stdin sentinel is gone: omp >= 17 reads piped stdin natively.
+    assert "-" not in command
+
+
+def test_omp_runner_translates_pi_wire_message_end() -> None:
+    """pi-wire message_end events must yield agent message text."""
+    from deepscientist.runners.omp import OmpRunner
+
+    runner = OmpRunner(
+        home=Path("/tmp/fake-home"),
+        repo_root=Path("/tmp/fake-repo"),
+        binary="omp",
+        logger=None,  # type: ignore[arg-type]
+        prompt_builder=None,  # type: ignore[arg-type]
+        artifact_service=None,  # type: ignore[arg-type]
+    )
+    events, texts = runner._translate_event(
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "internal"},
+                    {"type": "text", "text": "QUEST OK"},
+                ],
+                "model": "glm-5-turbo",
+            }
+        },
+        raw_line='{"type":"message_end"}',
+        quest_id="q1",
+        run_id="run-1",
+        skill_id="decision",
+        created_at="2026-08-20T00:00:00Z",
+        translation_state={},
+    )
+    assert texts == ["QUEST OK"]
+    assert events and events[0]["type"] == "runner.agent_message"
+    assert events[0]["text"] == "QUEST OK"
+
+
+def test_omp_runner_ignores_user_and_partial_pi_wire_messages() -> None:
+    """message_start/message_update and user-role messages must not emit."""
+    from deepscientist.runners.omp import OmpRunner
+
+    runner = OmpRunner(
+        home=Path("/tmp/fake-home"),
+        repo_root=Path("/tmp/fake-repo"),
+        binary="omp",
+        logger=None,  # type: ignore[arg-type]
+        prompt_builder=None,  # type: ignore[arg-type]
+        artifact_service=None,  # type: ignore[arg-type]
+    )
+    for payload in (
+        {"type": "message_start", "message": {"role": "assistant", "content": [{"type": "text", "text": "partial"}]}},
+        {"type": "message_end", "message": {"role": "user", "content": [{"type": "text", "text": "echo"}]}},
+        {"type": "session", "version": 3},
+    ):
+        events, texts = runner._translate_event(
+            payload,
+            raw_line="{}",
+            quest_id="q1",
+            run_id="run-1",
+            skill_id="decision",
+            created_at="2026-08-20T00:00:00Z",
+            translation_state={},
+        )
+        assert texts == []
+        assert events == []
 
 
 def test_omp_runner_uses_stdin_for_prompt() -> None:
