@@ -4,6 +4,17 @@ Notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `docs/llm-wiki/` — agent-facing operational wiki (8 pages, mermaid
+  diagrams): mental model, first run, quest lifecycle, **layout & separation
+  (framework vs DS home vs quests)**, model policy (glm-5-turbo /
+  glm-5.3-for-strategic), GitOps flow, troubleshooting from real incidents.
+- `skills/deepscientist-usage/` — day-to-day operation skill: daily loop,
+  model policy, framework/project non-interference contract, GitOps
+  pointers. Complements `deepscientist-linux-agent-setup` (install/repair).
+
 ## [1.7.0] — 2026-08-20
 
 First release of the fork's operational hardening line: OMP becomes the

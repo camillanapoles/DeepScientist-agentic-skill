@@ -2,6 +2,8 @@
 
 DeepScientist is not just a long-running autonomous scientific discovery system. It is also a persistent research map that lives on your own machine.
 
+> **Agent/LLM operators:** start at the [LLM Wiki](../llm-wiki/README.md) — operational runbook with diagrams (mental model, first run, quest lifecycle, framework/quest separation, model policy, GitOps, troubleshooting). Runtime skills: [deepscientist-usage](../../skills/deepscientist-usage/SKILL.md) · [deepscientist-linux-agent-setup](../../skills/deepscientist-linux-agent-setup/SKILL.md).
+
 2 minutes to install. 2 minutes to bind Weixin. 2 minutes to launch. Extremely fast and easy to use.
 
 Local Web access now starts without a password gate by default. If you want a generated 16-character browser password for one launch, run `ds --auth true`; DeepScientist then prints the password in the terminal and the browser can reuse the stored login after the first successful entry.
