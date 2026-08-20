@@ -603,6 +603,7 @@ def test_runners_config_test_executes_live_codex_probe(monkeypatch, temp_home: P
     manager = ConfigManager(temp_home)
     manager.ensure_files()
     runners = manager.load_named("runners")
+    runners["omp"]["enabled"] = False
     runners["codex"]["enabled"] = True
     runners["codex"]["binary"] = "codex"
 
