@@ -128,19 +128,17 @@ class OmpRunner(SimpleCliRunner):
 
         command: list[str] = [
             resolved_binary or self.binary,
-            "print",
-            "--json",
-            "--yes",
-            "--cwd",
-            str(workspace_root),
+            # omp >= 17: print is a flag (-p/--print); JSON output via --mode=json;
+            # auto-approval of tool calls via --auto-approve. Emits pi-wire
+            # session events (versioned, {"type":"message_end", ...}) on stdout.
+            "-p",
+            "--mode=json",
+            "--auto-approve",
+            f"--cwd={workspace_root}",
         ]
         normalized_model = str(request.model or "").strip()
         if normalized_model.lower() not in {"", "inherit", "default", "omp-default"}:
             command.extend(["--model", normalized_model])
-
-        # Prompt is passed via stdin by the SimpleCliRunner base to avoid
-        # argv length limits; append the sentinel so OMP reads it.
-        command.append("-")
         return command
 
     def _command_uses_stdin_prompt(self) -> bool:
@@ -183,6 +181,21 @@ class OmpRunner(SimpleCliRunner):
                     "created_at": created_at,
                 }
             )
+
+        # pi-wire (omp >= 17 `--mode=json`) session events: assistant messages
+        # arrive as {"type": "message_end", "message": {"role": "assistant",
+        # "content": [{"type": "text", "text": ...}, ...]}}. Only message_end
+        # carries the final text; message_start/message_update are partial or
+        # duplicates and are ignored to avoid double-emitting.
+        if event_type in {"message_end", "message_start", "message_update"}:
+            message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
+            role = str(message.get("role") or "").strip().lower()
+            if event_type == "message_end" and role in {"assistant", "agent"}:
+                content_blocks = message.get("content") if isinstance(message.get("content"), list) else []
+                for block in content_blocks:
+                    if isinstance(block, dict) and str(block.get("type") or "").strip().lower() == "text":
+                        emit_message(str(block.get("text") or ""))
+            return events, texts
 
         # Assistant text messages.
         if event_type in {"assistant", "message", "text", "assistant_message", "result"}:
